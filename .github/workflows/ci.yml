@@ -1,11 +1,11 @@
-name: CI Pipeline
+name: basic
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+
 jobs:
-  test:
+  greeter:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Hello GitHub Actions"
+      - run: echo hello
+      - run: echo goodbye
