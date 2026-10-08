@@ -41,10 +41,10 @@ async function basicInit(page: Page) {
       password: "a",
       roles: [{ role: Role.Diner }],
     },
-    "admin@jwt.com": {
+    "a@jwt.com": {
       id: "1",
       name: "Carl",
-      email: "admin@jwt.com",
+      email: "a@jwt.com",
       password: "admin",
       roles: [{ role: Role.Admin }],
     },
@@ -60,19 +60,29 @@ async function basicInit(page: Page) {
   let loggedInUser: User | undefined;
 
   await page.route("*/**/api/auth", async (route) => {
-    const loginReq = route.request().postDataJSON();
-    const user = validUsers[loginReq.email];
-    if (!user || user.password !== loginReq.password) {
-      await route.fulfill({ status: 401, json: { error: "Unauthorized" } });
+    const method = route.request().method();
+
+    if (method === "PUT") {
+      const loginReq = route.request().postDataJSON();
+      const user = validUsers[loginReq.email];
+      if (!user || user.password !== loginReq.password) {
+        await route.fulfill({ status: 401, json: { error: "Unauthorized" } });
+        return;
+      }
+      loggedInUser = validUsers[loginReq.email];
+      const loginRes = {
+        user: loggedInUser,
+        token: "abcdef",
+      };
+      await route.fulfill({ json: loginRes });
       return;
     }
-    loggedInUser = validUsers[loginReq.email];
-    const loginRes = {
-      user: loggedInUser,
-      token: "abcdef",
-    };
-    expect(route.request().method()).toBe("PUT");
-    await route.fulfill({ json: loginRes });
+
+    if (method === "DELETE") {
+      loggedInUser = undefined;
+      await route.fulfill({ json: { message: "logout successful" } });
+      return;
+    }
   });
 
   await page.route("*/**/api/user/me", async (route) => {
@@ -101,14 +111,30 @@ async function basicInit(page: Page) {
     await route.fulfill({ json: menuRes });
   });
 
-  await page.route("*/**/api/order", async (route) => {
-    const orderReq = route.request().postDataJSON();
-    const orderRes = {
-      order: { ...orderReq, id: 23 },
-      jwt: "eyJpYXQ",
-    };
-    expect(route.request().method()).toBe("POST");
-    await route.fulfill({ json: orderRes });
+  // Support both GET (order history for diner dashboard) and POST (creating orders)
+  await page.route(/\/api\/order(\?.*)?$/, async (route) => {
+    const method = route.request().method();
+
+    if (method === "GET") {
+      await route.fulfill({
+        json: {
+          dinerId: 3,
+          orders: [],
+          page: 1,
+        },
+      });
+      return;
+    }
+
+    if (method === "POST") {
+      const orderReq = route.request().postDataJSON();
+      const orderRes = {
+        order: { ...orderReq, id: 23 },
+        jwt: "eyJpYXQ",
+      };
+      await route.fulfill({ json: orderRes });
+      return;
+    }
   });
 
   // Consolidated Franchise & Store routing
@@ -203,14 +229,23 @@ async function basicInit(page: Page) {
   await page.goto("/");
 }
 
-test("login", async ({ page }) => {
+test("login, logout", async ({ page }) => {
   await basicInit(page);
+
+  // login as Kai Chen
   await page.getByRole("link", { name: "Login" }).click();
   await page.getByRole("textbox", { name: "Email address" }).fill("d@jwt.com");
   await page.getByRole("textbox", { name: "Password" }).fill("a");
   await page.getByRole("button", { name: "Login" }).click();
 
+  // view diner page (Kai Chen's initials are KC)
   await expect(page.getByRole("link", { name: "KC" })).toBeVisible();
+  await page.getByRole("link", { name: "KC" }).click();
+  await expect(page.getByRole("heading")).toContainText("Your pizza kitchen");
+  await expect(page.getByRole("main")).toContainText("d@jwt.com");
+
+  // logout
+  await page.getByRole("link", { name: "Logout" }).click();
 });
 
 test("purchase with login", async ({ page }) => {
@@ -312,14 +347,12 @@ test("Open, Close Franchise as admin", async ({ page }) => {
     .fill("a@jwt.com");
   await page.getByRole("button", { name: "Create" }).click();
 
-  // Verify created franchise appears in table
-  await expect(page.locator("tbody")).toContainText("frontendTest");
+  // Verify created franchise appears in the table by scoping to the row
+  const franchiseRow = page.getByRole("row", { name: /frontendTest/ });
+  await expect(franchiseRow).toBeVisible();
 
-  // Close the newly created franchise
-  await page
-    .getByRole("row", { name: /frontendTest/ })
-    .getByRole("button", { name: "Close" })
-    .click();
+  // Click the "Close" button specific to the frontendTest row
+  await franchiseRow.getByRole("button", { name: "Close" }).click();
 
   await expect(page.getByRole("heading")).toContainText("Sorry to see you go");
   await expect(page.getByRole("main")).toContainText(
