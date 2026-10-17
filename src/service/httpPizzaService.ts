@@ -10,6 +10,7 @@ import {
   Endpoints,
   OrderResponse,
   JWTPayload,
+  UserList,
 } from "./pizzaService";
 
 const pizzaServiceUrl = import.meta.env.VITE_PIZZA_SERVICE_URL;
@@ -55,6 +56,25 @@ class HttpPizzaService implements PizzaService {
         reject({ code: 500, message: e.message });
       }
     });
+  }
+
+  async getUserList(
+    page?: number,
+    limit?: number,
+    nameFilter?: string,
+  ): Promise<UserList> {
+    let query = {};
+    if (nameFilter && nameFilter !== "*") {
+      query = { page: page, limit: limit, name: nameFilter.replace(/\*/g, "") };
+    } else {
+      query = { page: page, limit: limit };
+    }
+    const userList = await this.callEndpoint(`/api/user?${query}`, "GET");
+    return Promise.resolve(userList);
+  }
+
+  deleteUser(user: User): Promise<void> {
+    return this.callEndpoint(`/api/user/${user.id}`, "DELETE");
   }
 
   async login(email: string, password: string): Promise<User> {
