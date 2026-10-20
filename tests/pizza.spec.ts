@@ -136,6 +136,39 @@ async function basicInit(page: Page) {
       return;
     }
   });
+  await page.route(/\/api\/user(\/.*|\?.*)?$/, async (route) => {
+    const method = route.request().method();
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: {
+          users: [
+            {
+              id: 1,
+              name: "Carl",
+              email: "admin@jwt.com",
+              roles: [{ role: "admin" }],
+            },
+          ],
+          more: false,
+        },
+      });
+      return;
+    }
+
+    if (method === "DELETE") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: { message: "user deleted" },
+      });
+      return;
+    }
+
+    await route.continue();
+  });
 
   // Consolidated Franchise & Store routing
   await page.route(/\/api\/franchise(\/.*|\?.*)?$/, async (route) => {
